@@ -1,20 +1,45 @@
 import { saveAs } from 'file-saver';
 import { MediaItem } from './MediaDetectionService';
 
+export interface QualityOption {
+  value: string;
+  label: string;
+  description: string;
+}
+
 export class DownloadService {
-  static async downloadMedia(item: MediaItem): Promise<void> {
+  static async downloadMedia(item: MediaItem, quality?: string): Promise<void> {
     try {
       // Handle different types of media downloads
       if (item.type === 'video' && item.url.includes('blob:')) {
         await this.downloadBlobVideo(item);
       } else if (item.url.includes('youtube.com') || item.url.includes('youtu.be') || item.url.includes('vimeo.com')) {
-        await this.downloadEmbeddedVideo(item);
+        await this.downloadEmbeddedVideo(item, quality);
       } else {
         await this.downloadDirectMedia(item);
       }
     } catch (error) {
       console.error('Download failed:', error);
       throw new Error(`Failed to download ${item.filename}`);
+    }
+  }
+
+  static async getQualityOptions(): Promise<QualityOption[]> {
+    try {
+      const response = await fetch('/api/quality-options');
+      if (!response.ok) {
+        throw new Error('Failed to fetch quality options');
+      }
+      const data = await response.json();
+      return data.options;
+    } catch (error) {
+      console.error('Failed to get quality options:', error);
+      // Return default options if API fails
+      return [
+        { value: 'high', label: 'High Quality (1080p)', description: 'Full HD 1080p maximum' },
+        { value: 'medium', label: 'Medium Quality (720p)', description: 'HD 720p maximum' },
+        { value: 'low', label: 'Low Quality (480p)', description: 'SD 480p maximum' }
+      ];
     }
   }
 
@@ -61,7 +86,7 @@ export class DownloadService {
     }
   }
 
-  private static async downloadEmbeddedVideo(item: MediaItem): Promise<void> {
+  private static async downloadEmbeddedVideo(item: MediaItem, quality?: string): Promise<void> {
     console.log('Downloading embedded video:', item.url);
     
     // Handle YouTube URLs specially
@@ -72,7 +97,7 @@ export class DownloadService {
       
       try {
         // Try multiple YouTube download services
-        await this.downloadYouTubeVideo(item, videoId);
+        await this.downloadYouTubeVideo(item, videoId, quality);
         return;
       } catch (error) {
         console.error('YouTube download failed:', error);
@@ -91,7 +116,7 @@ export class DownloadService {
   
 
 
-  private static async downloadYouTubeVideo(item: MediaItem, videoId: string): Promise<void> {
+  private static async downloadYouTubeVideo(item: MediaItem, videoId: string, quality: string = 'high'): Promise<void> {
     const downloadServices = [
       // Service 1: Try local yt-dlp backend (most reliable)
       async () => {
@@ -102,7 +127,8 @@ export class DownloadService {
           },
           body: JSON.stringify({
             url: item.url,
-            filename: item.filename
+            filename: item.filename,
+            quality: quality
           })
         });
         

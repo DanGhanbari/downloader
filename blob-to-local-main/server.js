@@ -31,12 +31,39 @@ function checkYtDlp() {
   });
 }
 
+// Quality format mappings
+const qualityFormats = {
+  'maximum': 'bestvideo[height>=2160]+bestaudio/bestvideo[height>=1440]+bestaudio/bestvideo[height>=1080]+bestaudio/bestvideo+bestaudio/best',
+  'high': 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/bestvideo[height<=1080]+bestaudio/best',
+  'medium': 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/bestvideo[height<=720]+bestaudio/best',
+  'low': 'bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/bestvideo[height<=480]+bestaudio/best',
+  'audio': 'bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio'
+};
+
+// Get available quality options endpoint
+app.get('/api/quality-options', (req, res) => {
+  res.json({
+    options: [
+      { value: 'maximum', label: 'Maximum Quality (4K/1440p/1080p+)', description: 'Best available quality up to 4K' },
+      { value: 'high', label: 'High Quality (1080p)', description: 'Full HD 1080p maximum' },
+      { value: 'medium', label: 'Medium Quality (720p)', description: 'HD 720p maximum' },
+      { value: 'low', label: 'Low Quality (480p)', description: 'SD 480p maximum' },
+      { value: 'audio', label: 'Audio Only', description: 'Extract audio only (M4A/MP3)' }
+    ]
+  });
+});
+
 // Download endpoint
 app.post('/api/download-youtube', async (req, res) => {
-  const { url, filename } = req.body;
+  const { url, filename, quality = 'high' } = req.body;
   
   if (!url) {
     return res.status(400).json({ error: 'URL is required' });
+  }
+
+  // Validate quality option
+  if (!qualityFormats[quality]) {
+    return res.status(400).json({ error: 'Invalid quality option' });
   }
 
   // Check if yt-dlp is available
@@ -52,15 +79,25 @@ app.post('/api/download-youtube', async (req, res) => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ytdl-'));
     const outputTemplate = path.join(tempDir, '%(title)s.%(ext)s');
     
-    console.log(`Downloading: ${url}`);
+    console.log(`Downloading: ${url} with quality: ${quality}`);
     
-    const ytDlp = spawn('yt-dlp', [
-      '--format', 'best[ext=mp4]/best',
+    const ytDlpArgs = [
+      '--format', qualityFormats[quality],
       '--output', outputTemplate,
       '--no-playlist',
       '--restrict-filenames', // Use safe filenames
-      url
-    ]);
+      '--embed-metadata'
+    ];
+
+    // Add merge format for video qualities
+    if (quality !== 'audio') {
+      ytDlpArgs.splice(2, 0, '--merge-output-format', 'mp4');
+      ytDlpArgs.push('--write-thumbnail', '--embed-thumbnail');
+    }
+    
+    ytDlpArgs.push(url);
+    
+    const ytDlp = spawn('yt-dlp', ytDlpArgs);
     
     let stderr = '';
     let stdout = '';
