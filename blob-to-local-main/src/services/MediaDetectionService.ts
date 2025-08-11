@@ -13,9 +13,25 @@ export class MediaDetectionService {
   static async detectMedia(url: string): Promise<MediaItem[]> {
     const mediaItems: MediaItem[] = [];
     
-    // Handle YouTube URLs specially
+    // Handle social media platform URLs specially
     if (url.includes('youtube.com') || url.includes('youtu.be')) {
       return this.handleYouTubeUrl(url);
+    }
+    
+    if (url.includes('instagram.com')) {
+      return this.handleInstagramUrl(url);
+    }
+    
+    if (url.includes('facebook.com') || url.includes('fb.watch')) {
+      return this.handleFacebookUrl(url);
+    }
+    
+    if (url.includes('twitter.com') || url.includes('x.com')) {
+      return this.handleTwitterUrl(url);
+    }
+    
+    if (url.includes('tiktok.com')) {
+      return this.handleTikTokUrl(url);
     }
     
     try {
@@ -83,6 +99,54 @@ export class MediaDetectionService {
     }];
   }
   
+  private static handleInstagramUrl(url: string): MediaItem[] {
+    // Extract post ID from Instagram URL
+    const postId = this.extractInstagramId(url);
+    const filename = postId ? `instagram_${postId}` : 'instagram_media';
+    
+    return [{
+      url: url,
+      type: 'video' as const,
+      filename: `${filename}.mp4`
+    }];
+  }
+  
+  private static handleFacebookUrl(url: string): MediaItem[] {
+    // Extract video ID from Facebook URL
+    const videoId = this.extractFacebookId(url);
+    const filename = videoId ? `facebook_${videoId}` : 'facebook_video';
+    
+    return [{
+      url: url,
+      type: 'video' as const,
+      filename: `${filename}.mp4`
+    }];
+  }
+  
+  private static handleTwitterUrl(url: string): MediaItem[] {
+    // Extract tweet ID from Twitter/X URL
+    const tweetId = this.extractTwitterId(url);
+    const filename = tweetId ? `twitter_${tweetId}` : 'twitter_video';
+    
+    return [{
+      url: url,
+      type: 'video' as const,
+      filename: `${filename}.mp4`
+    }];
+  }
+  
+  private static handleTikTokUrl(url: string): MediaItem[] {
+    // Extract video ID from TikTok URL
+    const videoId = this.extractTikTokId(url);
+    const filename = videoId ? `tiktok_${videoId}` : 'tiktok_video';
+    
+    return [{
+      url: url,
+      type: 'video' as const,
+      filename: `${filename}.mp4`
+    }];
+  }
+  
   private static extractYouTubeId(url: string): string | null {
     const patterns = [
       /youtu\.be\/([^/]+)/,
@@ -97,6 +161,72 @@ export class MediaDetectionService {
     for (const pattern of patterns) {
       const match = cleanUrl.match(pattern);
       if (match && match[1] && (match[1].length === 11 || match[1].length === 10)) {
+        return match[1];
+      }
+    }
+    
+    return null;
+  }
+  
+  private static extractInstagramId(url: string): string | null {
+    const patterns = [
+      /instagram\.com\/p\/([^/?]+)/,
+      /instagram\.com\/reel\/([^/?]+)/,
+      /instagram\.com\/tv\/([^/?]+)/
+    ];
+    
+    for (const pattern of patterns) {
+      const match = url.match(pattern);
+      if (match && match[1]) {
+        return match[1];
+      }
+    }
+    
+    return null;
+  }
+  
+  private static extractFacebookId(url: string): string | null {
+    const patterns = [
+      /facebook\.com\/watch\?v=([^&]+)/,
+      /facebook\.com\/.*\/videos\/([^/?]+)/,
+      /fb\.watch\/([^/?]+)/
+    ];
+    
+    for (const pattern of patterns) {
+      const match = url.match(pattern);
+      if (match && match[1]) {
+        return match[1];
+      }
+    }
+    
+    return null;
+  }
+  
+  private static extractTwitterId(url: string): string | null {
+    const patterns = [
+      /twitter\.com\/.*\/status\/([^/?]+)/,
+      /x\.com\/.*\/status\/([^/?]+)/
+    ];
+    
+    for (const pattern of patterns) {
+      const match = url.match(pattern);
+      if (match && match[1]) {
+        return match[1];
+      }
+    }
+    
+    return null;
+  }
+  
+  private static extractTikTokId(url: string): string | null {
+    const patterns = [
+      /tiktok\.com\/@[^/]+\/video\/([^/?]+)/,
+      /tiktok\.com\/t\/([^/?]+)/
+    ];
+    
+    for (const pattern of patterns) {
+      const match = url.match(pattern);
+      if (match && match[1]) {
         return match[1];
       }
     }

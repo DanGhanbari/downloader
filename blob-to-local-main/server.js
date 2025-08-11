@@ -31,6 +31,25 @@ function checkYtDlp() {
   });
 }
 
+// Detect platform from URL
+function detectPlatform(url) {
+  const urlLower = url.toLowerCase();
+  
+  if (urlLower.includes('youtube.com') || urlLower.includes('youtu.be')) {
+    return 'youtube';
+  } else if (urlLower.includes('instagram.com')) {
+    return 'instagram';
+  } else if (urlLower.includes('facebook.com') || urlLower.includes('fb.watch')) {
+    return 'facebook';
+  } else if (urlLower.includes('twitter.com') || urlLower.includes('x.com')) {
+    return 'twitter';
+  } else if (urlLower.includes('tiktok.com')) {
+    return 'tiktok';
+  } else {
+    return 'unknown';
+  }
+}
+
 // Quality format mappings
 const qualityFormats = {
   'maximum': 'bestvideo[height>=2160]+bestaudio/bestvideo[height>=1440]+bestaudio/bestvideo[height>=1080]+bestaudio/bestvideo+bestaudio/best',
@@ -53,9 +72,8 @@ app.get('/api/quality-options', (req, res) => {
   });
 });
 
-// Download endpoint
-app.post('/api/download-youtube', async (req, res) => {
-  const { url, filename, quality = 'high' } = req.body;
+// Download video from supported platforms (YouTube, Instagram, Facebook, Twitter)
+app.post('/api/download-video', async (req, res) => {  const { url, filename, quality = 'high' } = req.body;
   
   if (!url) {
     return res.status(400).json({ error: 'URL is required' });
@@ -79,7 +97,9 @@ app.post('/api/download-youtube', async (req, res) => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ytdl-'));
     const outputTemplate = path.join(tempDir, '%(title)s.%(ext)s');
     
-    console.log(`Downloading: ${url} with quality: ${quality}`);
+    // Detect platform and adjust settings accordingly
+    const platform = detectPlatform(url);
+    console.log(`Downloading from ${platform}: ${url} with quality: ${quality}`);
     
     const ytDlpArgs = [
       '--format', qualityFormats[quality],
@@ -88,6 +108,17 @@ app.post('/api/download-youtube', async (req, res) => {
       '--restrict-filenames', // Use safe filenames
       '--embed-metadata'
     ];
+
+    // Platform-specific configurations
+    if (platform === 'instagram' || platform === 'facebook') {
+      // Instagram and Facebook may need cookies for private content
+      ytDlpArgs.push('--no-check-certificate');
+    }
+    
+    if (platform === 'twitter') {
+      // Twitter-specific optimizations
+      ytDlpArgs.push('--no-check-certificate');
+    }
 
     // Add merge format for video qualities
     if (quality !== 'audio') {
@@ -114,14 +145,18 @@ app.post('/api/download-youtube', async (req, res) => {
     
     ytDlp.on('close', (code) => {
       if (code === 0) {
-        // Find the downloaded file
+        // Find the downloaded file (prioritize video files over thumbnails)
         const files = fs.readdirSync(tempDir);
         if (files.length > 0) {
-          const downloadedFile = path.join(tempDir, files[0]);
+          // Look for video files first (mp4, mkv, webm, etc.), then audio files, then others
+          const videoFile = files.find(file => /\.(mp4|mkv|webm|avi|mov|flv|m4v)$/i.test(file)) ||
+                           files.find(file => /\.(m4a|mp3|aac|ogg|wav|flac)$/i.test(file)) ||
+                           files[0];
+          const downloadedFile = path.join(tempDir, videoFile);
           const stats = fs.statSync(downloadedFile);
           
           // Send file as download
-          const finalFilename = filename || files[0];
+          const finalFilename = filename || videoFile;
           res.setHeader('Content-Disposition', `attachment; filename="${finalFilename}"`);
           res.setHeader('Content-Type', 'application/octet-stream');
           res.setHeader('Content-Length', stats.size);

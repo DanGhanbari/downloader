@@ -11,13 +11,13 @@ export class DownloadService {
   static async downloadMedia(item: MediaItem, quality?: string): Promise<void> {
     try {
       // Handle different types of media downloads
-      if (item.type === 'video' && item.url.includes('blob:')) {
-        await this.downloadBlobVideo(item);
-      } else if (item.url.includes('youtube.com') || item.url.includes('youtu.be') || item.url.includes('vimeo.com')) {
-        await this.downloadEmbeddedVideo(item, quality);
-      } else {
-        await this.downloadDirectMedia(item);
-      }
+    if (item.type === 'video' && item.url.includes('blob:')) {
+      await this.downloadBlobVideo(item);
+    } else if (this.isSupportedPlatform(item.url)) {
+      await this.downloadEmbeddedVideo(item, quality);
+    } else {
+      await this.downloadDirectMedia(item);
+    }
     } catch (error) {
       console.error('Download failed:', error);
       throw new Error(`Failed to download ${item.filename}`);
@@ -87,25 +87,20 @@ export class DownloadService {
   }
 
   private static async downloadEmbeddedVideo(item: MediaItem, quality?: string): Promise<void> {
-    console.log('Downloading embedded video:', item.url);
+    console.log('Downloading video from supported platform:', item.url);
     
-    // Handle YouTube URLs specially
-    if (item.url.includes('youtube.com') || item.url.includes('youtu.be')) {
-      const videoId = this.extractYouTubeId(item.url);
-      console.log('YouTube video ID extracted:', videoId);
-      console.log('Original YouTube URL:', item.url);
-      
+    // Handle all supported platforms using the unified backend
+    if (this.isSupportedPlatform(item.url)) {
       try {
-        // Try multiple YouTube download services
-        await this.downloadYouTubeVideo(item, videoId, quality);
+        await this.downloadFromPlatform(item, quality);
         return;
       } catch (error) {
-        console.error('YouTube download failed:', error);
-        throw new Error('Failed to download YouTube video');
+        console.error('Platform download failed:', error);
+        throw new Error(`Failed to download video from ${this.getPlatformName(item.url)}`);
       }
     }
 
-    // For non-YouTube embedded videos, try direct download first
+    // For unsupported platforms, try direct download
     try {
       await this.downloadDirectMedia(item);
     } catch (error) {
@@ -116,11 +111,41 @@ export class DownloadService {
   
 
 
-  private static async downloadYouTubeVideo(item: MediaItem, videoId: string, quality: string = 'high'): Promise<void> {
+  private static isSupportedPlatform(url: string): boolean {
+    const supportedPlatforms = [
+      'youtube.com', 'youtu.be',
+      'instagram.com',
+      'facebook.com', 'fb.watch',
+      'twitter.com', 'x.com',
+      'tiktok.com'
+    ];
+    
+    return supportedPlatforms.some(platform => url.toLowerCase().includes(platform));
+  }
+  
+  private static getPlatformName(url: string): string {
+    const urlLower = url.toLowerCase();
+    
+    if (urlLower.includes('youtube.com') || urlLower.includes('youtu.be')) {
+      return 'YouTube';
+    } else if (urlLower.includes('instagram.com')) {
+      return 'Instagram';
+    } else if (urlLower.includes('facebook.com') || urlLower.includes('fb.watch')) {
+      return 'Facebook';
+    } else if (urlLower.includes('twitter.com') || urlLower.includes('x.com')) {
+      return 'Twitter/X';
+    } else if (urlLower.includes('tiktok.com')) {
+      return 'TikTok';
+    } else {
+      return 'Unknown Platform';
+    }
+  }
+  
+  private static async downloadFromPlatform(item: MediaItem, quality: string = 'high'): Promise<void> {
     const downloadServices = [
       // Service 1: Try local yt-dlp backend (most reliable)
       async () => {
-        const response = await fetch('/api/download-youtube', {
+        const response = await fetch('/api/download-video', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
@@ -141,44 +166,16 @@ export class DownloadService {
         const blob = await response.blob();
         saveAs(blob, item.filename);
         return;
-      },
-      
-      // Service 2: Fallback to youtube-mp4-downloader.vercel.app
-      async () => {
-        const response = await fetch(`https://youtube-mp4-downloader.vercel.app/api/download?url=${encodeURIComponent(item.url)}`);
-        if (!response.ok) throw new Error(`Service failed: ${response.status}`);
-        const result = await response.json();
-        if (result.downloadUrl) {
-          const videoResponse = await fetch(result.downloadUrl);
-          if (!videoResponse.ok) throw new Error('Failed to download video file');
-          const blob = await videoResponse.blob();
-          saveAs(blob, item.filename);
-          return;
-        }
-        throw new Error('No download URL provided');
-      },
-      
-      // Service 3: Fallback to alternative API
-      async () => {
-        const response = await fetch(`https://api.vevioz.com/api/button/mp4/mp4-720?url=${encodeURIComponent(item.url)}`);
-        if (!response.ok) throw new Error(`Service failed: ${response.status}`);
-        const result = await response.json();
-        if (result.url) {
-          const videoResponse = await fetch(result.url);
-          if (!videoResponse.ok) throw new Error('Failed to download video file');
-          const blob = await videoResponse.blob();
-          saveAs(blob, item.filename);
-          return;
-        }
-        throw new Error('No download URL provided');
       }
+      // Note: Fallback services removed as they only support YouTube
+      // For multi-platform support, we rely on the yt-dlp backend
     ];
 
     let lastError: Error | null = null;
     
     for (let i = 0; i < downloadServices.length; i++) {
       try {
-        console.log(`Trying YouTube download service ${i + 1}...`);
+        console.log(`Trying download service ${i + 1} for ${this.getPlatformName(item.url)}...`);
         await downloadServices[i]();
         console.log(`Successfully downloaded via service ${i + 1}`);
         return;
@@ -188,7 +185,7 @@ export class DownloadService {
       }
     }
     
-    throw new Error(`All YouTube download services failed. To use yt-dlp backend, please install yt-dlp (pip install yt-dlp) and run the server with 'npm run dev:full'. Last error: ${lastError?.message}`);
+    throw new Error(`All download services failed for ${this.getPlatformName(item.url)}. To use yt-dlp backend, please install yt-dlp (pip install yt-dlp) and run the server with 'npm run dev:full'. Last error: ${lastError?.message}`);
   }
 
   private static createDownloadLink(url: string, filename: string): void {
