@@ -85,17 +85,28 @@ export const MediaDownloader = () => {
 
         {/* URL Input */}
         <Card className="p-8 mb-8 shadow-card">
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div className="flex-1 relative">
-              <Globe className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-              <Input
-                type="url"
-                placeholder="https://example.com/page-with-media"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                className="pl-12 h-14 text-lg bg-input/50 backdrop-blur-sm border-border/50 focus:border-primary transition-smooth"
+          <div className="flex flex-col gap-6">
+            <div className="flex flex-col sm:flex-row gap-4">
+              <div className="flex-1 relative">
+                <Globe className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                <Input
+                  type="url"
+                  placeholder="https://example.com/page-with-media"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  className="pl-12 h-14 text-lg bg-input/50 backdrop-blur-sm border-border/50 focus:border-primary transition-smooth"
+                  disabled={isAnalyzing}
+                />
+              </div>
+              <Button 
+                onClick={handleAnalyze} 
+                className="h-14 px-8 text-lg"
                 disabled={isAnalyzing}
-              />
+              >
+                {isAnalyzing ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : 'Analyze'}
+              </Button>
             </div>
             <Button
               onClick={handleAnalyze}

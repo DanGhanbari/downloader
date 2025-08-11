@@ -8,10 +8,15 @@ export interface MediaItem {
 }
 
 export class MediaDetectionService {
-  private static readonly CORS_PROXY = 'https://api.allorigins.win/get?url=';
+  private static readonly CORS_PROXY = 'https://api.allorigins.win/raw?url=';
   
   static async detectMedia(url: string): Promise<MediaItem[]> {
     const mediaItems: MediaItem[] = [];
+    
+    // Handle YouTube URLs specially
+    if (url.includes('youtube.com') || url.includes('youtu.be')) {
+      return this.handleYouTubeUrl(url);
+    }
     
     try {
       // Use CORS proxy to fetch the webpage content
@@ -22,8 +27,14 @@ export class MediaDetectionService {
         throw new Error(`Failed to fetch webpage: ${response.status}`);
       }
       
-      const data = await response.json();
-      const htmlContent = data.contents;
+      let htmlContent;
+      if (response.headers.get('content-type')?.includes('application/json')) {
+        const data = await response.json();
+        htmlContent = data.contents;
+      } else {
+        // For raw endpoint, we get the HTML directly
+        htmlContent = await response.text();
+      }
       
       // Parse HTML content
       const parser = new DOMParser();
@@ -57,6 +68,40 @@ export class MediaDetectionService {
       // Fallback: return sample media items for demo
       return this.getSampleMediaItems();
     }
+  }
+  
+  private static handleYouTubeUrl(url: string): MediaItem[] {
+    // Extract video title from URL or use a default
+    const videoId = this.extractYouTubeId(url);
+    const filename = videoId ? `youtube_${videoId}` : 'youtube_video';
+    
+    return [{
+      url: url,
+      type: 'video' as const,
+      filename: `${filename}.mp4`,
+      thumbnail: videoId ? `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg` : undefined
+    }];
+  }
+  
+  private static extractYouTubeId(url: string): string | null {
+    const patterns = [
+      /youtu\.be\/([^/]+)/,
+      /youtube\.com\/watch\?v=([^/&]+)/,
+      /youtube\.com\/embed\/([^/]+)/,
+      /youtube\.com\/v\/([^/]+)/
+    ];
+    
+    // Clean URL by removing fragments and the '?si=' parameter
+    const cleanUrl = url.split('#')[0].split('?si=')[0];
+    
+    for (const pattern of patterns) {
+      const match = cleanUrl.match(pattern);
+      if (match && match[1] && (match[1].length === 11 || match[1].length === 10)) {
+        return match[1];
+      }
+    }
+    
+    return null;
   }
   
   private static extractImages(doc: Document, baseUrl: string): MediaItem[] {
