@@ -14,6 +14,7 @@ export const MediaDownloader = () => {
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
   const [progress, setProgress] = useState(0);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [hasAnalyzed, setHasAnalyzed] = useState(false);
   const { toast } = useToast();
 
   const handleAnalyze = async () => {
@@ -30,6 +31,7 @@ export const MediaDownloader = () => {
     setProgress(0);
     setMediaItems([]);
     setAnalysisError(null);
+    setHasAnalyzed(true);
 
     try {
       // Simulate progress
@@ -96,7 +98,12 @@ export const MediaDownloader = () => {
                   type="url"
                   placeholder="https://example.com/page-with-media"
                   value={url}
-                  onChange={(e) => setUrl(e.target.value)}
+                  onChange={(e) => {
+                    setUrl(e.target.value);
+                    setHasAnalyzed(false);
+                    setAnalysisError(null);
+                    setMediaItems([]);
+                  }}
                   className="pl-12 h-14 text-lg bg-input/50 backdrop-blur-sm border-border/50 focus:border-primary transition-smooth"
                   disabled={isAnalyzing}
                 />
@@ -203,6 +210,8 @@ export const MediaDownloader = () => {
                     onClick={() => {
                       setUrl('');
                       setAnalysisError(null);
+                      setHasAnalyzed(false);
+                      setMediaItems([]);
                     }}
                     className="text-xs"
                   >
@@ -215,7 +224,7 @@ export const MediaDownloader = () => {
         )}
 
         {/* Empty State */}
-        {!isAnalyzing && !analysisError && mediaItems.length === 0 && url && (
+        {!isAnalyzing && !analysisError && mediaItems.length === 0 && url && hasAnalyzed && (
           <Card className="p-12 text-center shadow-card bg-gradient-to-br from-card/95 to-card/80 backdrop-blur-sm border-border/50">
             <div className="max-w-md mx-auto">
               <div className="p-4 rounded-full bg-muted/20 w-20 h-20 mx-auto mb-6 flex items-center justify-center">
@@ -249,7 +258,12 @@ export const MediaDownloader = () => {
                   <Button 
                     variant="outline" 
                     size="sm" 
-                    onClick={() => setUrl('')}
+                    onClick={() => {
+                      setUrl('');
+                      setHasAnalyzed(false);
+                      setMediaItems([]);
+                      setAnalysisError(null);
+                    }}
                     className="text-xs"
                   >
                     Try Different URL
