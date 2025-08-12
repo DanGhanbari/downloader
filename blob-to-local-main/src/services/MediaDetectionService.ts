@@ -9,8 +9,12 @@ export interface MediaItem {
 
 export class MediaDetectionService {
   private static readonly CORS_PROXY = 'https://api.allorigins.win/raw?url=';
+  private static fileCounter = 1;
   
   static async detectMedia(url: string): Promise<MediaItem[]> {
+    // Reset counter for each new page analysis
+    this.fileCounter = 1;
+    
     const mediaItems: MediaItem[] = [];
     
     // Handle social media platform URLs specially
@@ -87,9 +91,8 @@ export class MediaDetectionService {
   }
   
   private static handleYouTubeUrl(url: string): MediaItem[] {
-    // Extract video title from URL or use a default
     const videoId = this.extractYouTubeId(url);
-    const filename = videoId ? `youtube_${videoId}` : 'youtube_video';
+    const filename = this.extractFilename(url);
     
     return [{
       url: url,
@@ -100,9 +103,7 @@ export class MediaDetectionService {
   }
   
   private static handleInstagramUrl(url: string): MediaItem[] {
-    // Extract post ID from Instagram URL
-    const postId = this.extractInstagramId(url);
-    const filename = postId ? `instagram_${postId}` : 'instagram_media';
+    const filename = this.extractFilename(url);
     
     return [{
       url: url,
@@ -112,9 +113,7 @@ export class MediaDetectionService {
   }
   
   private static handleFacebookUrl(url: string): MediaItem[] {
-    // Extract video ID from Facebook URL
-    const videoId = this.extractFacebookId(url);
-    const filename = videoId ? `facebook_${videoId}` : 'facebook_video';
+    const filename = this.extractFilename(url);
     
     return [{
       url: url,
@@ -124,9 +123,7 @@ export class MediaDetectionService {
   }
   
   private static handleTwitterUrl(url: string): MediaItem[] {
-    // Extract tweet ID from Twitter/X URL
-    const tweetId = this.extractTwitterId(url);
-    const filename = tweetId ? `twitter_${tweetId}` : 'twitter_video';
+    const filename = this.extractFilename(url);
     
     return [{
       url: url,
@@ -136,9 +133,7 @@ export class MediaDetectionService {
   }
   
   private static handleTikTokUrl(url: string): MediaItem[] {
-    // Extract video ID from TikTok URL
-    const videoId = this.extractTikTokId(url);
-    const filename = videoId ? `tiktok_${videoId}` : 'tiktok_video';
+    const filename = this.extractFilename(url);
     
     return [{
       url: url,
@@ -422,14 +417,9 @@ export class MediaDetectionService {
   }
   
   private static extractFilename(url: string): string {
-    try {
-      const urlObj = new URL(url);
-      const pathname = urlObj.pathname;
-      const filename = pathname.split('/').pop()?.split('.')[0];
-      return filename || 'file';
-    } catch {
-      return 'file';
-    }
+    const filename = `MediaHarvest${this.fileCounter}`;
+    this.fileCounter++;
+    return filename;
   }
   
   private static getFileExtension(url: string): string | null {

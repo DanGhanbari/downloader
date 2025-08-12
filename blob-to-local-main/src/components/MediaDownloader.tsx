@@ -104,6 +104,11 @@ export const MediaDownloader = () => {
                     setAnalysisError(null);
                     setMediaItems([]);
                   }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && url && !isAnalyzing) {
+                      handleAnalyze();
+                    }
+                  }}
                   className="pl-12 h-14 text-lg bg-input/50 backdrop-blur-sm border-border/50 focus:border-primary transition-smooth"
                   disabled={isAnalyzing}
                 />
@@ -118,25 +123,7 @@ export const MediaDownloader = () => {
                 ) : 'Analyze'}
               </Button>
             </div>
-            <Button
-              onClick={handleAnalyze}
-              disabled={isAnalyzing || !url}
-              variant="hero"
-              size="lg"
-              className="h-14 px-8"
-            >
-              {isAnalyzing ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  Analyzing...
-                </>
-              ) : (
-                <>
-                  <Download className="w-5 h-5" />
-                  Analyze Page
-                </>
-              )}
-            </Button>
+
           </div>
 
           {isAnalyzing && (
