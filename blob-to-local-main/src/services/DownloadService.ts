@@ -8,20 +8,57 @@ export interface QualityOption {
 }
 
 export class DownloadService {
-  static async downloadMedia(item: MediaItem, quality?: string): Promise<void> {
+  private static activeDownloads = new Map<string, AbortController>();
+
+  static async downloadMedia(item: MediaItem, quality?: string, onProgress?: (progress: number) => void): Promise<void> {
+    const downloadId = item.url;
+    
+    // Create abort controller for this download
+    const abortController = new AbortController();
+    this.activeDownloads.set(downloadId, abortController);
+
     try {
       // Handle different types of media downloads
     if (item.type === 'video' && item.url.includes('blob:')) {
       await this.downloadBlobVideo(item);
     } else if (this.isSupportedPlatform(item.url)) {
-      await this.downloadEmbeddedVideo(item, quality);
+      await this.downloadEmbeddedVideo(item, quality, abortController.signal, onProgress);
     } else {
-      await this.downloadDirectMedia(item);
+      await this.downloadDirectMedia(item, abortController.signal);
     }
     } catch (error) {
       console.error('Download failed:', error);
       throw new Error(`Failed to download ${item.filename}`);
+    } finally {
+      this.activeDownloads.delete(downloadId);
     }
+  }
+
+  static async cancelDownload(itemUrl: string): Promise<void> {
+    const abortController = this.activeDownloads.get(itemUrl);
+    if (abortController) {
+      // First abort the fetch request
+      abortController.abort();
+      this.activeDownloads.delete(itemUrl);
+      
+      // Then call the backend cancel endpoint
+      try {
+        await fetch('/api/cancel-download', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ url: itemUrl }),
+        });
+        console.log('Download cancellation request sent to backend');
+      } catch (error) {
+        console.error('Failed to send cancellation request to backend:', error);
+      }
+    }
+  }
+
+  static isDownloadActive(itemUrl: string): boolean {
+    return this.activeDownloads.has(itemUrl);
   }
 
   static async getQualityOptions(): Promise<QualityOption[]> {
@@ -43,12 +80,12 @@ export class DownloadService {
     }
   }
 
-  private static async downloadDirectMedia(item: MediaItem): Promise<void> {
+  private static async downloadDirectMedia(item: MediaItem, signal?: AbortSignal): Promise<void> {
     try {
       // Use CORS proxy for cross-origin downloads
       console.log('Downloading from URL:', item.url);
       const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(item.url)}`;
-      const response = await fetch(proxyUrl);
+      const response = await fetch(proxyUrl, { signal });
       
       console.log('Response status:', response.status);
       console.log('Response headers:', Object.fromEntries(response.headers.entries()));
@@ -64,7 +101,7 @@ export class DownloadService {
     } catch (error) {
       // Fallback: try direct download (might fail due to CORS)
       try {
-        const response = await fetch(item.url, { mode: 'no-cors' });
+        const response = await fetch(item.url, { mode: 'no-cors', signal });
         const blob = await response.blob();
         saveAs(blob, item.filename);
       } catch (fallbackError) {
@@ -86,13 +123,13 @@ export class DownloadService {
     }
   }
 
-  private static async downloadEmbeddedVideo(item: MediaItem, quality?: string): Promise<void> {
+  private static async downloadEmbeddedVideo(item: MediaItem, quality?: string, signal?: AbortSignal, onProgress?: (progress: number) => void): Promise<void> {
     console.log('Downloading video from supported platform:', item.url);
     
     // Handle all supported platforms using the unified backend
     if (this.isSupportedPlatform(item.url)) {
       try {
-        await this.downloadFromPlatform(item, quality);
+        await this.downloadFromPlatform(item, quality, signal, onProgress);
         return;
       } catch (error) {
         console.error('Platform download failed:', error);
@@ -102,7 +139,7 @@ export class DownloadService {
 
     // For unsupported platforms, try direct download
     try {
-      await this.downloadDirectMedia(item);
+      await this.downloadDirectMedia(item, signal);
     } catch (error) {
       console.error('Direct download failed:', error);
       throw new Error('Failed to download embedded video');
@@ -141,7 +178,7 @@ export class DownloadService {
     }
   }
   
-  private static async downloadFromPlatform(item: MediaItem, quality: string = 'high'): Promise<void> {
+  private static async downloadFromPlatform(item: MediaItem, quality: string = 'high', signal?: AbortSignal, onProgress?: (progress: number) => void): Promise<void> {
     const downloadServices = [
       // Service 1: Try local yt-dlp backend (most reliable)
       async () => {
@@ -154,7 +191,8 @@ export class DownloadService {
             url: item.url,
             filename: item.filename,
             quality: quality
-          })
+          }),
+          signal
         });
         
         if (!response.ok) {

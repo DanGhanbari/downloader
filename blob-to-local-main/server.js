@@ -45,8 +45,20 @@ function detectPlatform(url) {
     return 'twitter';
   } else if (urlLower.includes('tiktok.com')) {
     return 'tiktok';
+  } else if (urlLower.includes('vimeo.com')) {
+    return 'vimeo';
+  } else if (urlLower.includes('dailymotion.com')) {
+    return 'dailymotion';
+  } else if (urlLower.includes('twitch.tv')) {
+    return 'twitch';
+  } else if (urlLower.includes('reddit.com')) {
+    return 'reddit';
+  } else if (urlLower.includes('streamable.com')) {
+    return 'streamable';
+  } else if (urlLower.match(/\.(mp4|webm|mov|avi|mkv|flv|wmv|m4v)$/i)) {
+    return 'direct-video';
   } else {
-    return 'unknown';
+    return 'generic';
   }
 }
 
@@ -72,8 +84,48 @@ app.get('/api/quality-options', (req, res) => {
   });
 });
 
+// Track active downloads
+const activeDownloads = new Map();
+
+// Cancel download endpoint
+app.post('/api/cancel-download', (req, res) => {
+  console.log('Cancel download endpoint called with body:', req.body);
+  const { url } = req.body;
+  if (!url) {
+    console.log('No URL provided in cancel request');
+    return res.status(400).json({ error: 'URL is required' });
+  }
+  
+  console.log('Active downloads:', Array.from(activeDownloads.keys()));
+  const downloadInfo = activeDownloads.get(url);
+  if (downloadInfo) {
+    console.log(`Cancelling download for: ${url}`);
+    const { ytDlp, tempDir, cleanup } = downloadInfo;
+    
+    if (ytDlp && !ytDlp.killed) {
+      console.log('Killing yt-dlp process via cancel endpoint...');
+      ytDlp.kill('SIGTERM');
+      setTimeout(() => {
+        if (ytDlp && !ytDlp.killed) {
+          console.log('Force killing yt-dlp process...');
+          ytDlp.kill('SIGKILL');
+        }
+      }, 2000);
+    }
+    
+    if (cleanup) cleanup();
+    activeDownloads.delete(url);
+    
+    res.json({ success: true, message: 'Download cancelled' });
+  } else {
+    console.log(`No active download found for URL: ${url}`);
+    res.status(404).json({ error: 'No active download found for this URL' });
+  }
+});
+
 // Download video from supported platforms (YouTube, Instagram, Facebook, Twitter)
-app.post('/api/download-video', async (req, res) => {  const { url, filename, quality = 'high' } = req.body;
+app.post('/api/download-video', async (req, res) => {
+  const { url, filename, quality = 'high' } = req.body;
   
   if (!url) {
     return res.status(400).json({ error: 'URL is required' });
@@ -92,14 +144,53 @@ app.post('/api/download-video', async (req, res) => {  const { url, filename, qu
     });
   }
 
+  let ytDlp = null;
+  let tempDir = null;
+  
+  // Handle request cancellation
+  const cleanup = () => {
+    console.log('Request cancelled by client');
+    if (ytDlp && !ytDlp.killed) {
+      console.log('Killing yt-dlp process...');
+      ytDlp.kill('SIGTERM');
+      // Force kill if SIGTERM doesn't work
+      setTimeout(() => {
+        if (ytDlp && !ytDlp.killed) {
+          console.log('Force killing yt-dlp process...');
+          ytDlp.kill('SIGKILL');
+        }
+      }, 5000);
+    }
+    if (tempDir) {
+      try {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+        console.log('Cleaned up temporary directory');
+      } catch (err) {
+        console.error('Error cleaning up temp directory:', err);
+      }
+    }
+    // Remove from active downloads
+    activeDownloads.delete(url);
+  };
+  
+  req.on('close', cleanup);
+  req.on('aborted', cleanup);
+  
+  // Also check if request is already aborted
+  if (req.aborted) {
+    console.log('Request already aborted');
+    return;
+  }
+
   try {
     // Create a temporary directory for downloads
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ytdl-'));
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ytdl-'));
     const outputTemplate = path.join(tempDir, '%(title)s.%(ext)s');
     
     // Detect platform and adjust settings accordingly
     const platform = detectPlatform(url);
     console.log(`Downloading from ${platform}: ${url} with quality: ${quality}`);
+    console.log('About to spawn yt-dlp process...');
     
     const ytDlpArgs = [
       '--format', qualityFormats[quality],
@@ -119,6 +210,26 @@ app.post('/api/download-video', async (req, res) => {  const { url, filename, qu
       // Twitter-specific optimizations
       ytDlpArgs.push('--no-check-certificate');
     }
+    
+    if (platform === 'generic' || platform === 'direct-video') {
+      // For generic websites, add more robust extraction options
+      ytDlpArgs.push(
+        '--no-check-certificate',
+        '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        '--referer', url,
+        '--extract-flat', 'false'
+      );
+      
+      // For direct video files, try to download directly
+      if (platform === 'direct-video') {
+        ytDlpArgs.push('--no-playlist', '--ignore-errors');
+      }
+    }
+    
+    if (platform === 'reddit') {
+      // Reddit-specific optimizations
+      ytDlpArgs.push('--no-check-certificate');
+    }
 
     // Add merge format for video qualities
     if (quality !== 'audio') {
@@ -128,10 +239,30 @@ app.post('/api/download-video', async (req, res) => {  const { url, filename, qu
     
     ytDlpArgs.push(url);
     
-    const ytDlp = spawn('yt-dlp', ytDlpArgs);
+    ytDlp = spawn('yt-dlp', ytDlpArgs);
+    console.log('yt-dlp process spawned successfully');
+    
+    // Register this download in the active downloads map
+    activeDownloads.set(url, { ytDlp, tempDir, cleanup });
+    console.log(`Registered download for: ${url}`);
+    console.log('Current active downloads:', Array.from(activeDownloads.keys()));
     
     let stderr = '';
     let stdout = '';
+    
+    // Periodically check if client is still connected
+    const connectionCheck = setInterval(() => {
+      if (res.destroyed || !res.writable) {
+        console.log('Client connection lost, killing yt-dlp process');
+        clearInterval(connectionCheck);
+        cleanup();
+      }
+    }, 1000); // Check every second
+    
+    // Clear interval when process completes
+    const clearConnectionCheck = () => {
+      clearInterval(connectionCheck);
+    };
     
     ytDlp.stdout.on('data', (data) => {
       stdout += data.toString();
@@ -144,6 +275,7 @@ app.post('/api/download-video', async (req, res) => {  const { url, filename, qu
     });
     
     ytDlp.on('close', (code) => {
+      clearConnectionCheck();
       if (code === 0) {
         // Find the downloaded file (prioritize video files over thumbnails)
         const files = fs.readdirSync(tempDir);
@@ -162,6 +294,14 @@ app.post('/api/download-video', async (req, res) => {  const { url, filename, qu
           res.setHeader('Content-Length', stats.size);
           
           const fileStream = fs.createReadStream(downloadedFile);
+          
+          // Handle client disconnect during file streaming
+          res.on('close', () => {
+            console.log('Client disconnected during file transfer');
+            fileStream.destroy();
+            fs.rmSync(tempDir, { recursive: true, force: true });
+          });
+          
           fileStream.pipe(res);
           
           // Clean up after sending
@@ -190,11 +330,14 @@ app.post('/api/download-video', async (req, res) => {  const { url, filename, qu
     });
     
     ytDlp.on('error', (error) => {
+      clearConnectionCheck();
       fs.rmSync(tempDir, { recursive: true, force: true });
-      res.status(500).json({ 
-        error: 'Failed to start yt-dlp',
-        details: error.message 
-      });
+      if (!res.headersSent) {
+        res.status(500).json({ 
+          error: 'Failed to start yt-dlp',
+          details: error.message 
+        });
+      }
     });
     
   } catch (error) {
@@ -216,9 +359,14 @@ app.get('/api/health', async (req, res) => {
   });
 });
 
-// Serve frontend for all other routes
+// Serve frontend for all other GET routes (not API routes)
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+  // Only serve frontend for non-API routes
+  if (!req.path.startsWith('/api/')) {
+    res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+  } else {
+    res.status(404).json({ error: 'API endpoint not found' });
+  }
 });
 
 app.listen(PORT, () => {

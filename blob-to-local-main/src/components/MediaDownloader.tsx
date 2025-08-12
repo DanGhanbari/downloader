@@ -13,6 +13,7 @@ export const MediaDownloader = () => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
   const [progress, setProgress] = useState(0);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
   const { toast } = useToast();
 
   const handleAnalyze = async () => {
@@ -28,6 +29,7 @@ export const MediaDownloader = () => {
     setIsAnalyzing(true);
     setProgress(0);
     setMediaItems([]);
+    setAnalysisError(null);
 
     try {
       // Simulate progress
@@ -46,6 +48,7 @@ export const MediaDownloader = () => {
         description: `Found ${items.length} media items`,
       });
     } catch (error) {
+      setAnalysisError(error instanceof Error ? error.message : 'Could not analyze the webpage. Please check the URL and try again.');
       toast({
         title: "Analysis Failed",
         description: "Could not analyze the webpage. Please check the URL and try again.",
@@ -170,14 +173,106 @@ export const MediaDownloader = () => {
           </div>
         )}
 
+        {/* Error State */}
+        {!isAnalyzing && analysisError && (
+          <Card className="p-12 text-center shadow-card bg-gradient-to-br from-destructive/5 to-destructive/10 backdrop-blur-sm border-destructive/20">
+            <div className="max-w-md mx-auto">
+              <div className="p-4 rounded-full bg-destructive/10 w-20 h-20 mx-auto mb-6 flex items-center justify-center">
+                <AlertCircle className="w-10 h-10 text-destructive" />
+              </div>
+              <h3 className="text-2xl font-bold mb-4 text-foreground">Analysis Failed</h3>
+              <p className="text-muted-foreground mb-6 leading-relaxed">
+                {analysisError}
+              </p>
+              <div className="space-y-3">
+                <div className="flex flex-wrap gap-2 justify-center">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => {
+                      setAnalysisError(null);
+                      handleAnalyze();
+                    }}
+                    className="text-xs"
+                  >
+                    Try Again
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => {
+                      setUrl('');
+                      setAnalysisError(null);
+                    }}
+                    className="text-xs"
+                  >
+                    Clear URL
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </Card>
+        )}
+
         {/* Empty State */}
-        {!isAnalyzing && mediaItems.length === 0 && url && (
-          <Card className="p-12 text-center shadow-card">
-            <AlertCircle className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
-            <h3 className="text-xl font-semibold mb-2">No Media Found</h3>
-            <p className="text-muted-foreground">
-              Try a different URL or check if the page contains downloadable media content.
-            </p>
+        {!isAnalyzing && !analysisError && mediaItems.length === 0 && url && (
+          <Card className="p-12 text-center shadow-card bg-gradient-to-br from-card/95 to-card/80 backdrop-blur-sm border-border/50">
+            <div className="max-w-md mx-auto">
+              <div className="p-4 rounded-full bg-muted/20 w-20 h-20 mx-auto mb-6 flex items-center justify-center">
+                <AlertCircle className="w-10 h-10 text-muted-foreground" />
+              </div>
+              <h3 className="text-2xl font-bold mb-4 text-foreground">No Media Content Found</h3>
+              <p className="text-muted-foreground mb-6 leading-relaxed">
+                We couldn't detect any downloadable media on this page. This could happen if:
+              </p>
+              <div className="text-left space-y-2 mb-6">
+                <div className="flex items-start gap-3 text-sm text-muted-foreground">
+                  <div className="w-1.5 h-1.5 rounded-full bg-primary mt-2 flex-shrink-0"></div>
+                  <span>The page doesn't contain images, videos, or audio files</span>
+                </div>
+                <div className="flex items-start gap-3 text-sm text-muted-foreground">
+                  <div className="w-1.5 h-1.5 rounded-full bg-primary mt-2 flex-shrink-0"></div>
+                  <span>Media content is protected or requires authentication</span>
+                </div>
+                <div className="flex items-start gap-3 text-sm text-muted-foreground">
+                  <div className="w-1.5 h-1.5 rounded-full bg-primary mt-2 flex-shrink-0"></div>
+                  <span>The website blocks automated media detection</span>
+                </div>
+                <div className="flex items-start gap-3 text-sm text-muted-foreground">
+                  <div className="w-1.5 h-1.5 rounded-full bg-primary mt-2 flex-shrink-0"></div>
+                  <span>Media is loaded dynamically via JavaScript</span>
+                </div>
+              </div>
+              <div className="space-y-3">
+                <p className="text-sm font-medium text-foreground">Try these suggestions:</p>
+                <div className="flex flex-wrap gap-2 justify-center">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => setUrl('')}
+                    className="text-xs"
+                  >
+                    Try Different URL
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => window.open('https://www.youtube.com', '_blank')}
+                    className="text-xs"
+                  >
+                    Test with YouTube
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => window.open('https://unsplash.com', '_blank')}
+                    className="text-xs"
+                  >
+                    Test with Unsplash
+                  </Button>
+                </div>
+              </div>
+            </div>
           </Card>
         )}
       </div>

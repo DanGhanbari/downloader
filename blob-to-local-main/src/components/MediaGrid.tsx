@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/components/ui/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Download, ExternalLink, Image, Video, Music, FileImage, Check, Loader2, Settings } from 'lucide-react';
+import { Download, ExternalLink, Image, Video, Music, FileImage, Check, Loader2, Settings, X } from 'lucide-react';
 import { MediaItem } from '@/services/MediaDetectionService';
 import { DownloadService, QualityOption } from '@/services/DownloadService';
 
@@ -63,18 +63,13 @@ export const MediaGrid = ({ items }: MediaGridProps) => {
     setDownloadProgress(prev => ({ ...prev, [itemId]: 0 }));
 
     try {
-      // Simulate download progress
-      const progressInterval = setInterval(() => {
-        setDownloadProgress(prev => ({
-          ...prev,
-          [itemId]: Math.min((prev[itemId] || 0) + 10, 90)
-        }));
-      }, 100);
-
       const quality = selectedQuality[itemId] || 'high';
-      await DownloadService.downloadMedia(item, quality);
       
-      clearInterval(progressInterval);
+      // Use the download service with progress callback
+      await DownloadService.downloadMedia(item, quality, (progress) => {
+        setDownloadProgress(prev => ({ ...prev, [itemId]: progress }));
+      });
+      
       setDownloadProgress(prev => ({ ...prev, [itemId]: 100 }));
       
       setTimeout(() => {
@@ -107,12 +102,36 @@ export const MediaGrid = ({ items }: MediaGridProps) => {
         return newProgress;
       });
 
-      toast({
-        title: "Download Failed",
-        description: `Could not download ${item.filename}`,
-        variant: "destructive",
-      });
+      // Check if it was cancelled
+      if (error instanceof Error && error.name === 'AbortError') {
+        toast({
+          title: "Download Cancelled",
+          description: `Download of ${item.filename} was cancelled`,
+        });
+      } else {
+        toast({
+          title: "Download Failed",
+          description: `Could not download ${item.filename}`,
+          variant: "destructive",
+        });
+      }
     }
+  };
+
+  const handleCancelDownload = async (item: MediaItem) => {
+    const itemId = item.url;
+    await DownloadService.cancelDownload(itemId);
+    
+    setDownloadingItems(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(itemId);
+      return newSet;
+    });
+    setDownloadProgress(prev => {
+      const newProgress = { ...prev };
+      delete newProgress[itemId];
+      return newProgress;
+    });
   };
 
   const handleDownloadAll = async () => {
@@ -266,7 +285,7 @@ export const MediaGrid = ({ items }: MediaGridProps) => {
                     disabled={isDownloading || isDownloaded}
                     variant={isDownloaded ? "secondary" : "default"}
                     size="sm"
-                    className="flex-1 transition-all duration-300 hover:scale-105 shadow-md hover:shadow-lg font-semibold"
+                    className={`${isDownloading ? 'flex-1' : 'flex-1'} transition-all duration-300 hover:scale-105 shadow-md hover:shadow-lg font-semibold`}
                   >
                     {isDownloading ? (
                       <>
@@ -285,6 +304,19 @@ export const MediaGrid = ({ items }: MediaGridProps) => {
                         </>
                       )}
                   </Button>
+                  
+                  {/* Cancel Button - only show when downloading */}
+                  {isDownloading && (
+                    <Button
+                      onClick={() => handleCancelDownload(item)}
+                      variant="destructive"
+                      size="sm"
+                      className="transition-all duration-300 hover:scale-105 shadow-md hover:shadow-lg"
+                      title="Cancel Download"
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  )}
                   
                   {isVideoItem(item) && (
                     <Button

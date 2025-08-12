@@ -81,8 +81,8 @@ export class MediaDetectionService {
     } catch (error) {
       console.error('Error detecting media:', error);
       
-      // Fallback: return sample media items for demo
-      return this.getSampleMediaItems();
+      // Throw the error so the UI can handle it appropriately
+      throw new Error(`Failed to analyze webpage: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
   
@@ -270,7 +270,8 @@ export class MediaDetectionService {
         videos.push({
           url: absoluteUrl,
           type: 'video',
-          filename: `${this.extractFilename(absoluteUrl) || 'video'}.${this.getFileExtension(absoluteUrl) || 'mp4'}`
+          filename: `${this.extractFilename(absoluteUrl) || 'video'}.${this.getFileExtension(absoluteUrl) || 'mp4'}`,
+          thumbnail: video.getAttribute('poster') ? this.resolveUrl(video.getAttribute('poster')!, baseUrl) : undefined
         });
       }
       
@@ -283,21 +284,87 @@ export class MediaDetectionService {
           videos.push({
             url: absoluteUrl,
             type: 'video',
-            filename: `${this.extractFilename(absoluteUrl) || 'video'}.${this.getFileExtension(absoluteUrl) || 'mp4'}`
+            filename: `${this.extractFilename(absoluteUrl) || 'video'}.${this.getFileExtension(absoluteUrl) || 'mp4'}`,
+            thumbnail: video.getAttribute('poster') ? this.resolveUrl(video.getAttribute('poster')!, baseUrl) : undefined
           });
         }
       });
     });
     
-    // Extract from iframes (YouTube, Vimeo, etc.)
+    // Extract from meta tags (Open Graph, Twitter Cards)
+    const metaTags = doc.querySelectorAll('meta');
+    metaTags.forEach(meta => {
+      const property = meta.getAttribute('property') || meta.getAttribute('name');
+      const content = meta.getAttribute('content');
+      
+      if (content && property) {
+        // Open Graph video tags
+        if (property === 'og:video' || property === 'og:video:url' || property === 'og:video:secure_url') {
+          const absoluteUrl = this.resolveUrl(content, baseUrl);
+          videos.push({
+            url: absoluteUrl,
+            type: 'video',
+            filename: `${this.extractFilename(absoluteUrl) || 'og-video'}.${this.getFileExtension(absoluteUrl) || 'mp4'}`
+          });
+        }
+        
+        // Twitter Card video tags
+        if (property === 'twitter:player' || property === 'twitter:player:stream') {
+          const absoluteUrl = this.resolveUrl(content, baseUrl);
+          videos.push({
+            url: absoluteUrl,
+            type: 'video',
+            filename: `${this.extractFilename(absoluteUrl) || 'twitter-video'}.${this.getFileExtension(absoluteUrl) || 'mp4'}`
+          });
+        }
+      }
+    });
+    
+    // Extract from iframes (YouTube, Vimeo, Dailymotion, etc.)
     const iframes = doc.querySelectorAll('iframe');
     iframes.forEach(iframe => {
       const src = iframe.getAttribute('src');
-      if (src && (src.includes('youtube.com') || src.includes('vimeo.com'))) {
+      if (src) {
+        const videoHosts = [
+          'youtube.com', 'youtu.be', 'vimeo.com', 'dailymotion.com', 
+          'twitch.tv', 'streamable.com', 'wistia.com', 'brightcove.com',
+          'jwplayer.com', 'kaltura.com', 'vidyard.com'
+        ];
+        
+        if (videoHosts.some(host => src.includes(host))) {
+          videos.push({
+            url: src,
+            type: 'video',
+            filename: `${this.extractFilename(src) || 'embedded-video'}.mp4`
+          });
+        }
+      }
+    });
+    
+    // Extract from data attributes and common video patterns
+    const elementsWithVideoData = doc.querySelectorAll('[data-video-url], [data-src*=".mp4"], [data-src*=".webm"], [data-src*=".mov"], [data-src*=".avi"]');
+    elementsWithVideoData.forEach(element => {
+      const videoUrl = element.getAttribute('data-video-url') || element.getAttribute('data-src');
+      if (videoUrl) {
+        const absoluteUrl = this.resolveUrl(videoUrl, baseUrl);
         videos.push({
-          url: src,
+          url: absoluteUrl,
           type: 'video',
-          filename: `${this.extractFilename(src) || 'embedded-video'}.mp4`
+          filename: `${this.extractFilename(absoluteUrl) || 'data-video'}.${this.getFileExtension(absoluteUrl) || 'mp4'}`
+        });
+      }
+    });
+    
+    // Extract from links pointing to video files
+    const videoLinks = doc.querySelectorAll('a[href*=".mp4"], a[href*=".webm"], a[href*=".mov"], a[href*=".avi"], a[href*=".mkv"], a[href*=".flv"], a[href*=".wmv"]');
+    videoLinks.forEach(link => {
+      const href = link.getAttribute('href');
+      if (href) {
+        const absoluteUrl = this.resolveUrl(href, baseUrl);
+        videos.push({
+          url: absoluteUrl,
+          type: 'video',
+          filename: `${this.extractFilename(absoluteUrl) || 'linked-video'}.${this.getFileExtension(absoluteUrl) || 'mp4'}`
         });
       }
     });
@@ -376,45 +443,5 @@ export class MediaDetectionService {
     }
   }
   
-  private static getSampleMediaItems(): MediaItem[] {
-    return [
-      {
-        url: 'https://images.unsplash.com/photo-1649972904349-6e44c42644a7',
-        type: 'image',
-        filename: 'sample-image-1.jpg',
-        dimensions: '1920x1080',
-        size: '2.4 MB',
-        thumbnail: 'https://images.unsplash.com/photo-1649972904349-6e44c42644a7?w=400'
-      },
-      {
-        url: 'https://images.unsplash.com/photo-1488590528505-98d2b5aba04b',
-        type: 'image',
-        filename: 'sample-image-2.jpg',
-        dimensions: '1600x900',
-        size: '1.8 MB',
-        thumbnail: 'https://images.unsplash.com/photo-1488590528505-98d2b5aba04b?w=400'
-      },
-      {
-        url: 'https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4',
-        type: 'video',
-        filename: 'sample-video.mp4',
-        dimensions: '1280x720',
-        size: '1.0 MB'
-      },
-      {
-        url: 'https://www.soundjay.com/misc/sounds/bell-ringing-05.wav',
-        type: 'audio',
-        filename: 'sample-audio.wav',
-        size: '0.5 MB'
-      },
-      {
-        url: 'https://images.unsplash.com/photo-1516245834210-c4c142787335',
-        type: 'image',
-        filename: 'sample-image-3.jpg',
-        dimensions: '1800x1200',
-        size: '3.2 MB',
-        thumbnail: 'https://images.unsplash.com/photo-1516245834210-c4c142787335?w=400'
-      }
-    ];
-  }
+
 }
